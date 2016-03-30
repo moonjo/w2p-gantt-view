@@ -1,0 +1,583 @@
+{{extend 'layout_bootstrap3.html'}}
+
+<link rel="stylesheet" href="{{=URL('static', 'css/bootstrap-modal-bs3patch.css')}}"/>
+<link rel="stylesheet" href="{{=URL('static', 'css/bootstrap-modal.css')}}"/>
+<link rel="stylesheet" href="{{=URL('static', 'css/bootstrap-multiselect.css')}}"/>
+<link rel="stylesheet" href="{{=URL('static', 'css/tooltipster.css')}}"/>
+
+<style>
+body {
+    margin: 0;
+    padding: 60px 0 0 0;
+    height: 100%;
+    overflow: hidden;
+}
+.bold { font-weight: bold; }
+.navbar ul, .navbar li {
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+.btn-group {
+    margin-top: 10px;
+}
+.btn-group > .btn-group {
+    margin-top: 0;
+}
+
+.btn-group-xs {
+    margin-top: 15px;
+}
+.btn-group-xs .btn {
+    padding-left: 10px;
+    padding-right: 10px;
+ }
+.dropdown-menu {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+
+#gantt {
+    margin-top: 0px;
+    overflow-y: auto;
+    width: 100%;
+    height: 100%;
+}
+
+.brush .extent {
+    stroke: #fff;
+    fill: #1e90ff;
+    fill-opacity: .25;
+    shape-rendering: crispEdges;
+}
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #777;
+  shape-rendering: crispEdges;
+}
+
+.axis text {
+  font-family: sans-serif;
+  font-size: 11px;
+}
+
+line.grid {
+    //stroke: lightgrey;
+    //opacity: 0.7;
+}
+.grid path {
+    stroke-width: 0;
+}
+
+/* subticks */
+.x-axis-top line.tick {
+    fill: none;
+    shape-rendering: crispEdges;
+    stroke: lightgrey;
+}
+line.tick.minor {
+    visibility: hidden;
+}
+
+
+.context-menu {
+    padding: 8px;
+    text-align: center;
+    font-size: 10pt;
+    border: solid 1px #aaa;
+    border-radius: 8px;
+    background: #FFFFCC;
+}
+.context-menu ul {
+    list-style: none;
+}
+
+.tooltip-booking, .tooltip-task {
+    padding: 8px;
+    text-align: center;
+    font-size: 10pt;
+    border: solid 1px #aaa;
+    border-radius: 8px;
+    pointer-events: none;
+}
+.tooltip-booking {
+    background: #d6ebff;
+}
+.tooltip-task {
+    background: #ddd;
+}
+
+.time-label {
+    font-weight: bold;
+}
+.dept-code {
+    font-weight: bold;
+    text-shadow: 1px 1px #777;
+}
+
+
+.today {
+    fill: #99ccff;
+    fill-opacity: 0.6;
+}
+.weekend {
+    fill: #ccc;
+    fill-opacity: 0.5;
+}
+.book {
+    fill-opacity: 0.8;
+}
+.task {
+    fill: #ccc;
+    fill-opacity: 0.8;
+}
+.bar-label {
+    pointer-events: none;
+    fill-opacity: 0.8;
+    font-family: Georgia;
+}
+
+.booking rect, .tasks rect {
+    stroke: #222;
+    stroke-width: 0.5;
+}
+.tasks {
+    cursor: pointer;
+}
+#colour-menu {
+    width: 168px;
+}
+#colour-label {
+    text-align: right;
+}
+#sort-menu {
+    width: 152px;
+}
+
+</style>
+
+<script type="text/javascript">
+
+
+    //modalmanager({spinner: '<div class="progress loading-spinner fade" style="width: 200px; margin-left: -100px;"><div class="progress-bar progress-bar-striped active" style="width: 100%;"><span class="sr-only" ></span></div></div>'});
+    
+    $(document).ready(function() {
+        
+        $('[title]').tooltipster({
+            delay: 0,
+            fixedWidth: 120,
+        });
+        
+        var tooltip = d3.select("body")
+                        .append("div")
+                        .style("position", "absolute")
+                        .style("z-index", "10")
+                        .style("visibility", "hidden")
+                        .text("a simple tooltip");
+        
+        var department_selected = +'{{=dept_selected}}';
+        
+        var date_range = '{{=date_range}}';
+        // debug
+        //date_range = 'month';
+        
+        var booking_data = {{=XML(bookings)}};
+        var task_data = {{=XML(tasks)}};
+        
+        var project_codes = {{=XML(project_codes)}};
+        
+        // Shotgun project colours
+        var colour_map = '<style>';
+        
+        {{for k,v in project_colour_map.iteritems():}}
+          colour_map += "{{='.project-%s rect{fill:%s;}.project-%s text{fill:%s;}' %(k,v[0],k,v[1])}}";
+        {{pass}}
+        
+        {{for k,v in department_colour_map.iteritems():}}
+          colour_map += "{{='.dept-%s{fill:%s;}.dept-%s text{fill:%s;}' %(k,v[0],k,v[1])}}";
+        {{pass}}
+        
+        colour_map += '</style>';
+        $('head').append(colour_map);
+        
+        // show all users
+        var users = {{=XML(users)}};
+        var gantt = d3.gantt('#gantt').users(users).projects(project_codes);
+        
+        var sort_speed = 10;
+        
+        if (department_selected === 'ALL' ||  department_selected === 'TORONTO' || department_selected === 'GOTHAM') {
+            gantt.sortSpeed(1);
+        } else {
+            gantt.sortSpeed(sort_speed);
+        }
+        gantt.timeRange(date_range);
+        gantt(booking_data, task_data);
+        
+        
+        /*
+         **********************************************************************
+         *
+         *  NAVBAR CONTROLS
+         *
+         **********************************************************************
+        */
+        
+        
+        
+        $(window).resize(function() {
+            if (this.resizeTO) clearTimeout(this.resizeTO);
+            this.resizeTO = setTimeout(function() {
+                $(this).trigger('resizeEnd');
+            }, 500);
+        });
+        $(window).on('resizeEnd', function() {
+            //gantt.redraw(booking_data, task_data);
+            gantt.redraw();
+        });
+        
+        function department_label_update(deptid) {
+            $('#department-picker').find('a').each(function() {
+                var $this = $(this);
+                if ($this.data('sgid') === deptid) {
+                    $('#dept-select-label').text($this.text()).data('deptid', deptid);
+                    return false;
+                }
+            });
+        }
+        
+        
+        var month_names = ["January", "February", "March", "April", "May", "June",
+                           "July", "August", "September", "October", "November", "December"];
+        
+        function update_range(date_range, today_offset, direction) {
+            gantt.brushExtent(date_range);
+        }
+        
+        function update_range1(date_range, today_offset, direction) {
+            
+            var deptids = JSON.stringify($('#department-picker').val());
+            if (deptids === 'null') {
+                alert("Please select a department");
+                return;
+            }
+            
+            if (typeof direction == 'undefined' || direction === null) {
+                var dir = '';
+                var date_start = '';
+                var date_end = '';
+            } else {
+                var dir = direction;
+                var date_domain = gantt.timeDomain();
+                var date_start = date_domain[0].getFullYear()+'-'+(('00'+(date_domain[0].getMonth()+1)).slice(-2))+'-'+(('00'+date_domain[0].getDate()).slice(-2));
+                var date_end = date_domain[1].getFullYear()+'-'+(('00'+(date_domain[1].getMonth()+1)).slice(-2))+'-'+(('00'+date_domain[1].getDate()).slice(-2));
+            }
+            
+            $('body').modalmanager('loading');
+            $.ajax({
+                url: '{{=URL("ajax_bookings")}}',
+                dataType: 'json',
+                data: {
+                    departments: deptids,
+                    range: date_range,
+                    today: today_offset ? 1:0,
+                    direction: dir,
+                    datestart: date_start,
+                    dateend: date_end,
+                    },
+            })
+            .done(function(data) {
+                $('body').modalmanager('loading');
+                
+                var today = new Date();
+                var label;
+                switch (date_range) {
+                    case 'week':
+                        label = 'Week ' + Math.ceil((((today-new Date(today.getFullYear(),0,1))/8.64e7)+0)/7) + ' / ' + month_names[today.getMonth()];
+                        break;
+                    case 'month':
+                        label = month_names[today.getMonth()] + ' ' + today.getFullYear();
+                        break;
+                    case 'semi':
+                        if (today.getMonth() > 6) {
+                            s = 'January';
+                            e = 'June';
+                        } else {
+                            s = 'June';
+                            e = 'December';
+                        }
+                        label = s + ' - ' + e + ' ' + today.getFullYear();
+                        break;
+                    case 'year':
+                        label = today.getFullYear();
+                        break;
+                    case 'custom':
+                        label = 'Custom';
+                        break;
+                }
+                if (date_start !== '') {
+                    $('#current-range').text(date_start + ' to ' + date_end);
+                } else {
+                    $('#current-range').text(label);
+                }
+                
+                booking_data = JSON.parse(data.bookings);
+                task_data = JSON.parse(data.tasks);
+                
+                if (data.domain === '') {
+                    gantt.todayOffset(today_offset).timeRange(date_range).redraw(booking_data, task_data);
+                } else {
+                    var s = new Date(data.domain[0]);
+                    s.setHours(0);
+                    s.setMinutes(0);
+                    s.setTime(s.getTime() + (24 * 60 * 60 * 1000));
+                    
+                    var e = new Date(data.domain[1]);
+                    e.setHours(0);
+                    e.setMinutes(0);
+                    e.setTime(e.getTime() + (24 * 60 * 60 * 1000));
+                    
+                    //gantt.todayOffset(today_offset).rangeChange([date_range].concat([s, e])).redraw(booking_data, task_data);
+                    gantt.todayOffset(today_offset).rangeChange([date_range].concat([s, e])).setData(booking_data, task_data).redraw();
+                }
+            });
+        }
+        
+        $(document).on('click', '#department-select', function(e) {
+            e.preventDefault();
+            
+            var deptids = JSON.stringify($('#department-picker').val());
+            if (deptids === 'null') {
+                alert("Please select a department");
+                return;
+            }
+            var date_range = $('#time-range-btn-group').children('label.active').children('input').val();
+            date_range = 'year';
+            
+            $('body').modalmanager('loading');
+            $.ajax({
+                url: '{{=URL("ajax_bookings")}}',
+                dataType: 'json',
+                data: {
+                    departments: deptids,
+                    range: date_range,
+                    today: 0,
+                    chart: 'd3',
+                    },
+            })
+            .done(function(data) {
+                $('body').modalmanager('loading');
+                
+                booking_data = JSON.parse(data.bookings);
+                task_data = JSON.parse(data.tasks);
+                gantt.cleanup();
+                gantt = d3.gantt('#gantt').users(data.users).projects(project_codes);
+                gantt.timeRange(date_range).ysort($('#sort-label').data('sort'));
+                gantt(booking_data, task_data);
+                
+                var dept_selected = $('#dept-select-label').text();
+                if (dept_selected === 'ALL' ||  dept_selected === 'TORONTO' || dept_selected === 'GOTHAM') {
+                    gantt.sortSpeed(1);
+                } else {
+                    gantt.sortSpeed(sort_speed);
+                }
+                if ($('#colour-label').text().indexOf('Department') > -1) {
+                    colour_department();
+                }
+            });
+        });
+        
+        $(document).on('click', '#time-range-btn-group > label', function() {
+            var date_range = $(this).children().val();
+            update_range(date_range, false);
+        });
+        
+        $(document).on('click', '#time-uptoday', function() {
+            var date_range = $('#time-range-btn-group').children('label.active').children('input').val();
+            update_range(date_range, true);
+        });
+        
+        $(document).on('click', '.time-direction', function() {
+            var date_range = $('#time-range-btn-group').children('label.active').children('input').val();
+            var direction = $(this).data('direction');
+            update_range(date_range, false, direction);
+        });
+        
+        function colour_project() {
+            $('.booking').each(function() {
+                var $this = $(this);
+                var projcode = $this.data('proj');
+                $this.attr('class', 'booking project-'+projcode);
+                gantt.colour('project');
+            });
+        }
+        
+        function colour_department() {
+            $('.booking').each(function() {
+                var $this = $(this);
+                var deptcode = $this.data('dept');
+                $this.attr('class', 'booking dept-'+deptcode);
+                gantt.colour('department');
+            });
+        }
+        
+        $(document).on('click', '.colour-option', function(e) {
+            // switch bar colour
+            e.preventDefault();
+            if (this.id == 'colour-project') {
+                $('#colour-label').text('Colour: Project');
+                colour_project();
+            } else {
+                $('#colour-label').text('Colour: Department');
+                colour_department();
+            }
+        });
+        
+        
+        $(document).on('click', '.sort-option', function(e) {
+            e.preventDefault();
+            var sorting = this.id.split('-')[1];
+            var label = "Sort: " + sorting.charAt(0).toUpperCase() + sorting.slice(1);
+            $('#sort-label').text(label).data('sort', sorting);
+            
+            gantt.sorter(sorting);
+        });
+        
+        function multi_clear() {
+            $('option', $('#department-picker')).each(function(elem) {
+                $(this).removeAttr('selected').prop('selected', false);
+            });
+            $('#department-picker').multiselect('refresh');
+        }
+        
+        $('#department-picker').multiselect({
+            onChange: function(element, checked) {
+                var val = +element.val();
+                if (checked) {
+                    var $selected = $('#department-picker option:selected[value!='+val+']');
+                    if ($selected.length > 0) {
+                        if (val < 1) {
+                           // if top options selected deselect all
+                            $selected.each(function(i, elem) {
+                                $(this).prop('selected', false);
+                                $('#department-picker').multiselect('deselect', $(this).val());
+                            });
+                        } else {
+                            // else deselect any time options
+                            $selected.each(function(i, elem) {
+                                if (+$(elem).val() < 1) {
+                                    $(this).prop('selected', false);
+                                    $('#department-picker').multiselect('deselect', $(this).val());
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        });
+        
+        $(document).on('click', '#department-clear', function() {
+            multi_clear();
+        });
+        
+        $('#time-range-btn-group').find('label').removeClass('active')
+        $('input.time-range[value="'+date_range+'"]').parent().addClass('active');
+        document.title = "XV2 Crew Schedule";
+    });
+</script>
+
+<nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <span class="navbar-brand">Mr. X Crew Schedule</span>
+    </div>
+    
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      
+      <ul class="nav navbar-nav">
+        
+        <li class="btn-group">
+          
+          <button id="department-select" class="btn btn-primary" title="View selected"><i class="fa fa-tasks"></i></button>
+          {{=dept_select}}
+          <button id="department-clear" class="btn btn-default" title="Clear selection"><i class="fa fa-eraser"></i></button>
+        </li>
+        
+        <li class="button"><a id="current-range" class="" href="#"></a></li>
+        
+      </ul>
+      
+      <ul class="nav navbar-nav navbar-right">
+        <!-- 
+        <li>
+          <div class="btn-group btn-group-xs" style="margin-right: 10px">
+            <button type="button" class="btn btn-default mini-wide time-direction" data-direction="back" title="Look back"><i class="fa fa-angle-left"></i></button>
+            <button type="button" class="btn btn-default mini-wide time-direction" data-direction="forward" title="Look ahead"><i class="fa fa-angle-right"></i></button>
+          </div>
+        </li>
+         -->
+        <li><button type="button" id="time-uptoday" class="btn btn-default btn-sm navbar-btn" style="margin-right:10px;" title="Pull up to Today">Today </button></li>
+        <li>
+          <div id="time-range-btn-group" class="btn-group btn-group-sm" data-toggle="buttons">
+            <label class="btn btn-primary">
+              <input class="time-range" type="radio" value="week"> Week
+            </label>
+            <label class="btn btn-primary">
+              <input class="time-range" type="radio" value="month"> Month
+            </label>
+            <label class="btn btn-primary">
+              <input class="time-range" type="radio" value="semi"> 6 Months
+            </label>
+            <label class="btn btn-primary">
+              <input class="time-range" type="radio" value="year"> 1 Year
+            </label>
+            <!-- 
+            <label class="btn btn-primary active" disabled>
+              <input class="time-range" type="radio" value="custom"> Custom
+            </label>
+             -->
+          </div>
+        </li>
+        
+        <li id="colour-menu" class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown" style="text-align:right;"><span id="colour-label">Colour: Project</span> <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+            <li><a href="#" id="colour-department" class="colour-option">Department</a></li>
+            <li><a href="#" id="colour-project" class="colour-option">Project</a></li>
+          </ul>
+        </li>
+        
+        <li id="sort-menu" class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown"><span id="sort-label" data-sort="firstname">Sort: First Name</span> <b class="caret"></b></a>
+          <ul class="dropdown-menu">
+            <li><a href="#" id="sort-firstname" class="sort-option">First Name</a></li>
+            <li><a href="#" id="sort-lastname" class="sort-option">Last Name</a></li>
+            <li><a href="#" id="sort-department" class="sort-option">Department</a></li>
+          </ul>
+        </li>
+        
+        <div class="navbar-form navbar-left" role="search">
+          <div class="form-group">
+            <input type="text" class="form-control" placeholder="Filter by Name">
+          </div>
+        </div>
+        
+      </ul>
+      
+    </div>
+  </div>
+</nav>
+
+<div id="mini"></div>
+<hr>
+<div id="gantt"></div>
+
+<script type="text/javascript" src="{{=URL('static','js/jquery.tooltipster.min.js')}}"></script>
+<script type="text/javascript" src="{{=URL('static','js/bootstrap-modal.js')}}"></script>
+<script type="text/javascript" src="{{=URL('static','js/bootstrap-modalmanager.js')}}"></script>
+<script type="text/javascript" src="{{=URL('static','js/jquery-ui.min.js')}}"></script>
+<script type="text/javascript" src="{{=URL('static', 'js/d3.v3.min.js')}}"></script>
+<script type="text/javascript" src="{{=URL('static', 'js/gantt-chart-d3.js')}}"></script>
